@@ -1,14 +1,13 @@
 """
-Complete Photo Selling Bot - Supabase PostgreSQL Version
+Complete GMAIL Selling Bot - Supabase PostgreSQL Version
+- All original messages and features preserved
 - Persistent data (never deletes on redeploy)
-- User balance management
-- Direct messaging
-- 30 min wait message
+- User balance management with admin controls
+- Full admin panel with broadcast, edit balance, custom reject reasons
 """
 
 import os
 import psycopg2
-from psycopg2.extras import RealDictCursor
 import logging
 import asyncio
 import sys
@@ -32,15 +31,15 @@ try:
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-# Get tokens
+# Get tokens from environment
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_BOT_TOKEN:
-    print("⚠️ TELEGRAM_BOT_TOKEN not found!")
-    TELEGRAM_BOT_TOKEN = input("Enter your bot token: ")
+    print("⚠️ TELEGRAM_BOT_TOKEN environment variable not found!")
+    TELEGRAM_BOT_TOKEN = input("Enter your bot token manually: ")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    print("⚠️ DATABASE_URL not found!")
+    print("⚠️ DATABASE_URL environment variable not found!")
     DATABASE_URL = input("Enter your Supabase Connection String: ")
 
 ADMIN_ID = 8669242020
@@ -441,7 +440,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    text = f"👋 স্বাগতম Professional Photo Selling Bot এ!\n\nপ্রতিটি অনুমোদিত ছবি: {SCRIPT_PRICE} টাকা\n\nনিচের মেনু থেকে অপশন বেছে নিন 👇"
+    text = (
+        "👋 স্বাগতম GMAIL Selling Bot এ!\n\n"
+        "আপনার Gmail and Password লিখে জমা দিন এবং প্রতিটি অনুমোদিত "
+        f"Gmail {SCRIPT_PRICE} টাকা আয় করুন।\n\n"
+        "📌 কীভাবে কাজ করবেন:\n"
+        f"1️⃣ নিচের \"{SELL_BTN}\" বাটনে ক্লিক করুন\n"
+        "2️⃣ GMAIL লিখে পাঠান\n"
+        "3️⃣ PASSWORD লিখে পাঠান\n"
+        "4️⃣ Admin পর্যালোচনা করবেন (সাধারণত ৩০ মিনিটের মধ্যে)\n"
+        f"5️⃣ অনুমোদিত হলে আপনার ব্যালেন্সে {SCRIPT_PRICE} টাকা যোগ হবে, "
+        "প্রত্যাখ্যাত হলে কোনো টাকা যোগ হবে না\n\n"
+        f"💸 উত্তোলন (Withdrawal): সর্বনিম্ন {MIN_WITHDRAWAL} টাকা ব্যালেন্স থাকলে "
+        "তবেই উত্তোলনের অনুরোধ করা যাবে।\n\n"
+        "নিচের মেনু থেকে অপশন বেছে নিন 👇"
+    )
     
     if query:
         await query.answer()
@@ -454,18 +467,12 @@ async def start_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔴 বট বর্তমানে বন্ধ আছে।")
         return
     
-    await update.message.reply_text(
-        "📌 কীভাবে ছবি বিক্রি করবেন:\n"
-        "1️⃣ Sell বাটনে ক্লিক করুন\n"
-        "2️⃣ ছবির বর্ণনা লিখুন\n"
-        "3️⃣ Admin approval এর অপেক্ষা করুন — অনুমোদন হলে ১৫ টাকা যোগ হবে\n\n"
-        "এখন আপনার ছবি সম্পর্কে তথ্য লিখুন (যেমন: Professional portrait):"
-    )
+    await update.message.reply_text("📝 আপনার GMAIL লিখে পাঠান:")
     return States.WAITING_TITLE
 
 async def handle_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["script_title"] = update.message.text.strip()
-    await update.message.reply_text("✅ তথ্য রেকর্ড করা হয়েছে।\n\nএখন ছবির বিস্তারিত বর্ণনা লিখুন:")
+    await update.message.reply_text("✅ GMAIL রেকর্ড করা হয়েছে।\n\nএখন PASSWORD লিখে পাঠান:")
     return States.WAITING_SCRIPT
 
 async def handle_script(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -478,11 +485,7 @@ async def handle_script(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             ADMIN_ID,
-            f"📸 নতুন ছবি জমা হয়েছে!\n\n"
-            f"ব্যবহারকারী: @{user.username or user.first_name}\n"
-            f"ID: {script_id}\n"
-            f"শিরোনাম: {title}\n"
-            f"বর্ণনা: {script_text[:100]}..."
+            f"📝 নতুন GMAIL জমা!\n\nব্যবহারকারী: @{user.username or user.first_name}\nID: {script_id}\nGMAIL: {title}\nPASSWORD: {script_text[:100]}..."
         )
     except Exception as e:
         logger.error(f"Admin notify error: {e}")
@@ -490,9 +493,9 @@ async def handle_script(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("← মেনু", callback_data="back_menu")]]
     await update.message.reply_text(
         f"✅ জমা হয়েছে! (ID: {script_id})\n\n"
-        f"আমরা আপনার ছবি পর্যালোচনা করছি।\n"
-        f"⏳ অনুমোদনের জন্য সর্বোচ্চ ৩০ মিনিট অপেক্ষা করুন।\n\n"
-        f"অনুমোদিত হলে আপনার অ্যাকাউন্টে {SCRIPT_PRICE} টাকা যোগ হবে।",
+        f"⏳ অনুমোদনের জন্য অপেক্ষা করুন\n\n"
+        f"আমরা আপনার Gmail পর্যালোচনা করছি। সাধারণত ৩০ মিনিটের মধ্যে অনুমোদন দেওয়া হবে।\n\n"
+        f"আপনার অ্যাকাউন্ট verified হলে {SCRIPT_PRICE} টাকা যোগ হবে।",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
     return ConversationHandler.END
@@ -562,7 +565,7 @@ async def confirm_withdrawal_callback(update: Update, context: ContextTypes.DEFA
         
         await query.edit_message_text(
             f"✅ উত্তোলন অনুরোধ পাঠানো হয়েছে! (ID: {withdrawal_id})\n\n"
-            f"⏳ অনুমোদনের জন্য সর্বোচ্চ ৩০ মিনিট অপেক্ষা করুন।"
+            f"⏳ অনুমোদনের জন্য অপেক্ষা করুন"
         )
     
     await start(update, context)
@@ -570,7 +573,7 @@ async def confirm_withdrawal_callback(update: Update, context: ContextTypes.DEFA
 
 async def balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_bot_active():
-        await update.message.reply_text("🔴 বট বর্তমানে বন্ধ আছে।")
+        await update.message.reply_text("🔴 বট বর্তমানে বন্ধ।")
         return
     
     balance = get_user_balance(update.effective_user.id)
@@ -590,9 +593,12 @@ async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     keyboard = [
-        [InlineKeyboardButton("📸 পেন্ডিং ছবি", callback_data="admin_scripts")],
-        [InlineKeyboardButton("💳 উত্তোলন অনুরোধ", callback_data="admin_withdrawals")],
+        [InlineKeyboardButton("📝 পেন্ডিং GMAIL", callback_data="admin_scripts")],
+        [InlineKeyboardButton("💳 উত্তোলন", callback_data="admin_withdrawals")],
         [InlineKeyboardButton("👥 ইউজার ম্যানেজ", callback_data="admin_users")],
+        [InlineKeyboardButton("✏️ ইউজার ব্যালেন্স এডিট", callback_data="admin_edit_balance_start")],
+        [InlineKeyboardButton("💬 ইউজারকে মেসেজ পাঠান", callback_data="admin_msg_user_start")],
+        [InlineKeyboardButton("📢 সব ইউজারকে ঘোষণা", callback_data="admin_broadcast_start")],
         [InlineKeyboardButton("🔴 বট বন্ধ", callback_data="bot_stop")],
         [InlineKeyboardButton("🟢 বট চালু", callback_data="bot_start")],
     ]
@@ -602,12 +608,12 @@ async def show_admin_scripts(query, context):
     pending = get_pending_scripts()
     
     if not pending:
-        await query.edit_message_text("কোনো পেন্ডিং ছবি নেই।")
+        await query.edit_message_text("কোনো পেন্ডিং GMAIL নেই।")
         return
     
     for i, (script_id, user_id, title, script_text, submitted_at, status) in enumerate(pending):
         preview = script_text[:150] if len(script_text) > 150 else script_text
-        text = f"[{i+1}/{len(pending)}] ID: {script_id}\nশিরোনাম: {title}\nবর্ণনা: {preview}...\n\nজমা: {submitted_at}"
+        text = f"[{i+1}/{len(pending)}] ID: {script_id}\nGMAIL: {title}\nPASSWORD: {preview}...\n\nজমা: {submitted_at}"
         
         keyboard = [
             [
@@ -633,7 +639,7 @@ async def show_admin_withdrawals(query, context):
     
     for withdrawal_id, user_id, amount, bkash_number, requested_at, status in pending_ws:
         text += f"[ID {withdrawal_id}] {amount} টাকা → {bkash_number}\n\n"
-        keyboard.append([InlineKeyboardButton(f"✅ অনুমোদন {withdrawal_id}", callback_data=f"approve_w_{withdrawal_id}")])
+        keyboard.append([InlineKeyboardButton(f"✅ অনুমোদন", callback_data=f"approve_w_{withdrawal_id}")])
     
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -653,6 +659,203 @@ async def show_admin_users(query, context):
     
     keyboard = [[InlineKeyboardButton("← ফিরে যান", callback_data="admin_back")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+# ---------- Admin: Edit Balance ----------
+
+async def admin_edit_balance_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    await query.edit_message_text("👤 যে ইউজারের ব্যালেন্স পরিবর্তন করবেন তার User ID পাঠান:\n\n(বাতিল করতে /start লিখুন)")
+    return States.ADMIN_EDIT_USER_ID
+
+async def admin_edit_balance_get_userid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user_id = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("❌ সঠিক সংখ্যার User ID পাঠান।")
+        return States.ADMIN_EDIT_USER_ID
+
+    user_info = get_user_info(user_id)
+    if not user_info:
+        get_or_create_user(user_id, None)
+        current_balance = 0
+    else:
+        current_balance = user_info[2]
+
+    context.user_data["edit_target_user"] = user_id
+    await update.message.reply_text(
+        f"👤 User ID: {user_id}\nবর্তমান ব্যালেন্স: {current_balance} টাকা\n\n➡️ নতুন ব্যালেন্স লিখুন (শুধু সংখ্যা):"
+    )
+    return States.ADMIN_EDIT_BALANCE
+
+async def admin_edit_balance_apply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        new_balance = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("❌ সংখ্যা লিখুন।")
+        return States.ADMIN_EDIT_BALANCE
+
+    user_id = context.user_data.get("edit_target_user")
+    user_info = get_user_info(user_id)
+    old_balance = user_info[2] if user_info else 0
+
+    update_user_balance(user_id, new_balance)
+
+    await update.message.reply_text(
+        f"✅ সম্পন্ন!\n\n👤 User ID: {user_id}\n📊 আগে: {old_balance} টাকা\n📊 এখন: {new_balance} টাকা"
+    )
+
+    try:
+        await context.bot.send_message(
+            user_id, f"⚠️ আপনার ব্যালেন্স অ্যাডমিন কর্তৃক আপডেট করা হয়েছে।\nনতুন ব্যালেন্স: {new_balance} টাকা"
+        )
+    except Exception as e:
+        logger.error(f"User notify error: {e}")
+
+    context.user_data.pop("edit_target_user", None)
+    return ConversationHandler.END
+
+# ---------- Admin: Message a specific user ----------
+
+async def admin_msg_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    await query.edit_message_text("👤 যাকে মেসেজ পাঠাবেন তার User ID পাঠান:\n\n(বাতিল করতে /start লিখুন)")
+    return States.ADMIN_MESSAGE_USER_ID
+
+async def admin_msg_get_userid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user_id = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("❌ সঠিক সংখ্যার User ID পাঠান।")
+        return States.ADMIN_MESSAGE_USER_ID
+
+    context.user_data["msg_target_user"] = user_id
+    await update.message.reply_text(f"✅ User ID: {user_id}\n\n✏️ এখন মেসেজ লিখুন:")
+    return States.ADMIN_MESSAGE_TEXT
+
+async def admin_msg_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = context.user_data.get("msg_target_user")
+    message_text = update.message.text
+
+    try:
+        await context.bot.send_message(user_id, f"📬 Admin Message:\n\n{message_text}")
+        await update.message.reply_text(f"✅ মেসেজ পাঠানো হয়েছে ইউজার {user_id} কে।")
+    except Exception as e:
+        await update.message.reply_text(f"❌ পাঠানো যায়নি: {e}")
+
+    context.user_data.pop("msg_target_user", None)
+    return ConversationHandler.END
+
+# ---------- Admin: Broadcast to all users ----------
+
+async def admin_broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    await query.edit_message_text("📢 সকল ইউজারকে যে মেসেজ পাঠাবেন তা লিখুন:\n\n(বাতিল করতে /start লিখুন)")
+    return States.ADMIN_BROADCAST_TEXT
+
+async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_text = update.message.text
+    users = get_all_users()
+    sent, failed = 0, 0
+
+    for user_id, username, balance, total_sold in users:
+        try:
+            await context.bot.send_message(user_id, f"📢 ঘোষণা:\n\n{message_text}")
+            sent += 1
+        except Exception:
+            failed += 1
+
+    await update.message.reply_text(
+        f"✅ Broadcast সম্পন্ন!\n\n📨 পাঠানো হয়েছে: {sent} জন\n❌ ব্যর্থ: {failed} জন"
+    )
+    return ConversationHandler.END
+
+# ---------- Admin: Reject with reason ----------
+
+REJECT_REASONS = {
+    "reason_invalid": "আপনার GMAIL টি সঠিক নয়।",
+    "reason_notworking": "আপনার GMAIL টি কাজ করছে না।",
+    "reason_issue": "আপনার GMAIL এ কারিগরি সমস্যা রয়েছে।",
+}
+
+async def reject_script_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return ConversationHandler.END
+
+    script_id = int(query.data.split("_")[1])
+    row = get_script(script_id)
+    if not row or row[4] != "pending":
+        await query.answer("ইতিমধ্যে প্রসেস।", show_alert=True)
+        return ConversationHandler.END
+
+    context.user_data["reject_script_id"] = script_id
+    context.user_data["reject_user_id"] = row[1]
+
+    keyboard = [
+        [InlineKeyboardButton("❌ GMAIL টি সঠিক নয়", callback_data="reason_invalid")],
+        [InlineKeyboardButton("❌ GMAIL টি কাজ করছে না", callback_data="reason_notworking")],
+        [InlineKeyboardButton("❌ GMAIL এ সমস্যা আছে", callback_data="reason_issue")],
+        [InlineKeyboardButton("✏️ কাস্টম কারণ লিখুন", callback_data="reason_custom")],
+    ]
+    await query.edit_message_text("প্রত্যাখ্যানের কারণ বেছে নিন:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return States.ADMIN_REJECT_REASON
+
+async def reject_script_reason_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    script_id = context.user_data.get("reject_script_id")
+    user_id = context.user_data.get("reject_user_id")
+
+    if query.data == "reason_custom":
+        await query.edit_message_text("✏️ প্রত্যাখ্যানের কারণ লিখে পাঠান:")
+        return States.ADMIN_REJECT_REASON
+
+    reason = REJECT_REASONS.get(query.data, "আপনার GMAIL টি অনুমোদিত হয়নি।")
+    reject_script(script_id)
+
+    try:
+        await context.bot.send_message(
+            user_id, f"❌ আপনার GMAIL (ID: {script_id}) প্রত্যাখ্যান করা হয়েছে।\n\nকারণ: {reason}"
+        )
+    except Exception:
+        pass
+
+    await query.edit_message_text(f"✅ প্রত্যাখ্যান সম্পন্ন। (ID: {script_id})")
+    context.user_data.pop("reject_script_id", None)
+    context.user_data.pop("reject_user_id", None)
+    return ConversationHandler.END
+
+async def reject_script_custom_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    script_id = context.user_data.get("reject_script_id")
+    user_id = context.user_data.get("reject_user_id")
+    reason = update.message.text.strip()
+
+    reject_script(script_id)
+
+    try:
+        await context.bot.send_message(
+            user_id, f"❌ আপনার GMAIL (ID: {script_id}) প্রত্যাখ্যান করা হয়েছে।\n\nকারণ: {reason}"
+        )
+    except Exception:
+        pass
+
+    await update.message.reply_text(f"✅ প্রত্যাখ্যান সম্পন্ন। (ID: {script_id})")
+    context.user_data.pop("reject_script_id", None)
+    context.user_data.pop("reject_user_id", None)
+    return ConversationHandler.END
+
+# ---------- Button Callback Handler ----------
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -708,27 +911,35 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         row = get_script(script_id)
         if not row or row[4] != "pending":
-            await query.answer("ইতিমধ্যে প্রসেস করা হয়েছে।", show_alert=True)
+            await query.answer("ইতিমধ্যে প্রসেস।", show_alert=True)
             return
         
         approve_script(script_id, user_id)
-        
+
         try:
-            await context.bot.send_message(user_id, f"✅ আপনার ছবি অনুমোদিত হয়েছে!\n\nআপনার অ্যাকাউন্টে {SCRIPT_PRICE} টাকা যোগ হয়েছে।")
-        except:
-            pass
-        
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "🎉 অভিনন্দন!\n\n"
+                    "✅ আপনার GMAIL অনুমোদিত হয়েছে।\n"
+                    f"💰 আপনার অ্যাকাউন্টে {SCRIPT_PRICE} টাকা যোগ করা হয়েছে।\n\n"
+                    "ধন্যবাদ।"
+                )
+            )
+            logger.info(f"Message sent to {user_id}")
+
+        except Exception as e:
+            logger.error(f"Message failed for {user_id}: {e}")
+            try:
+                await context.bot.send_message(
+                    ADMIN_ID,
+                    f"⚠️ GMAIL {script_id} অনুমোদিত হয়েছে ও ব্যালেন্স যোগ হয়েছে, কিন্তু ইউজার {user_id}-কে "
+                    f"নোটিফাই করা যায়নি (হয়তো বট ব্লক করা): {e}"
+                )
+            except Exception:
+                pass
+
         await query.answer("✅ Done", show_alert=True)
-        await show_admin_scripts(query, context)
-    elif query.data.startswith("reject_"):
-        script_id = int(query.data.split("_")[1])
-        row = get_script(script_id)
-        if not row or row[4] != "pending":
-            await query.answer("ইতিমধ্যে প্রসেস করা হয়েছে।", show_alert=True)
-            return
-        
-        reject_script(script_id)
-        await query.answer("❌ Done", show_alert=True)
         await show_admin_scripts(query, context)
 
 def main():
@@ -742,6 +953,7 @@ def main():
     
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
+    # Script (GMAIL) conversation
     script_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Text([SELL_BTN]), start_sell)],
         states={
@@ -753,6 +965,7 @@ def main():
         per_chat=True,
     )
     
+    # Withdrawal conversation
     bkash_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Text([WITHDRAWAL_BTN]), start_withdrawal)],
         states={
@@ -763,16 +976,70 @@ def main():
         per_user=True,
         per_chat=True,
     )
-    
+
+    # Admin edit balance conversation
+    admin_balance_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_edit_balance_start, pattern="^admin_edit_balance_start$")],
+        states={
+            States.ADMIN_EDIT_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_balance_get_userid)],
+            States.ADMIN_EDIT_BALANCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_balance_apply)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_user=True,
+        per_chat=True,
+    )
+
+    # Admin message user conversation
+    admin_msg_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_msg_user_start, pattern="^admin_msg_user_start$")],
+        states={
+            States.ADMIN_MESSAGE_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_msg_get_userid)],
+            States.ADMIN_MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_msg_send)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_user=True,
+        per_chat=True,
+    )
+
+    # Admin broadcast conversation
+    admin_broadcast_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_broadcast_start, pattern="^admin_broadcast_start$")],
+        states={
+            States.ADMIN_BROADCAST_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_broadcast_send)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_user=True,
+        per_chat=True,
+    )
+
+    # Admin reject conversation
+    admin_reject_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(reject_script_start, pattern="^reject_")],
+        states={
+            States.ADMIN_REJECT_REASON: [
+                CallbackQueryHandler(reject_script_reason_callback, pattern="^reason_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reject_script_custom_reason),
+            ],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_user=True,
+        per_chat=True,
+    )
+
+    # Register all handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(script_conv)
     app.add_handler(bkash_conv)
+    app.add_handler(admin_balance_conv)
+    app.add_handler(admin_msg_conv)
+    app.add_handler(admin_broadcast_conv)
+    app.add_handler(admin_reject_conv)
     app.add_handler(MessageHandler(filters.Text([BALANCE_BTN]), balance_handler))
     app.add_handler(MessageHandler(filters.Text([ADMIN_BTN]), admin_handler))
     app.add_handler(CallbackQueryHandler(button_callback))
     
     logger.info("✅ Bot started successfully with Supabase PostgreSQL!")
-    asyncio.run(app.run_polling())
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
