@@ -211,6 +211,68 @@ def reject_script(script_id):
     cur.execute("UPDATE scripts SET status = 'rejected' WHERE script_id = ?", (script_id,))
     conn.commit()
     conn.close()
+    conn.close()
+
+
+def get_user_info(user_id):
+    async def edit_user_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin edit user balance"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    
+    try:
+        args = update.message.text.split()
+        if len(args) < 3:
+            await update.message.reply_text("❌ ফর্ম্যাট: /edituser userid newbalance\nউদাহরণ: /edituser 12345 500")
+            return
+        
+        user_id = int(args[1])
+        new_balance = int(args[2])
+        
+        user_info = get_user_info(user_id)
+        if not user_info:
+            await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি।")
+            return
+        
+        old_balance = user_info[2]
+        update_user_balance(user_id, new_balance)
+        
+        await update.message.reply_text(f"✅ ইউজার {user_id} এর ব্যালেন্স আপডেট হয়েছে:\n\n📊 আগে: {old_balance} টাকা\n📊 এখন: {new_balance} টাকা")
+        
+        try:
+            await context.bot.send_message(user_id, f"⚠️ আপনার ব্যালেন্স অ্যাডমিন দ্বারা আপডেট করা হয়েছে: {new_balance} টাকা")
+        except:
+            pass
+    except ValueError:
+        await update.message.reply_text("❌ সংখ্যা সঠিক নয়।")
+
+
+async def send_message_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin send message to user"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    
+    try:
+        parts = update.message.text.split(None, 2)
+        if len(parts) < 3:
+            await update.message.reply_text("❌ ফর্ম্যাট: /msg userid message\nউদাহরণ: /msg 12345 আপনার অ্যাকাউন্ট সাসপেন্ড করা হয়েছে")
+            return
+        
+        user_id = int(parts[1])
+        message_text = parts[2]
+        
+        user_info = get_user_info(user_id)
+        if not user_info:
+            await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি।")
+            return
+        
+        try:
+            await context.bot.send_message(user_id, f"📬 Admin Message:\n\n{message_text}")
+            await update.message.reply_text(f"✅ মেসেজ পাঠানো হয়েছে ইউজার {user_id} কে।")
+        except Exception as e:
+            await update.message.reply_text(f"❌ ইউজারকে পাঠানো যায়নি: {e}")
+    except ValueError:
+        await update.message.reply_text("❌ ইউজার ID ভুল।") 
 
 
 def get_user_info(user_id):
@@ -357,7 +419,13 @@ async def handle_script(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Admin notify error: {e}")
     
     keyboard = [[InlineKeyboardButton("← মেনু", callback_data="back_menu")]]
-    await update.message.reply_text(f"✅ জমা হয়েছে! (ID: {script_id})", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(
+        f"✅ জমা হয়েছে! (ID: {script_id})\n\n"
+        f"⏳ অনুমোদনের জন্য অপেক্ষা করুন\n\n"
+        f"আমরা আপনার Gmail পর্যালোচনা করছি। সাধারণত ৩০ মিনিটের মধ্যে অনুমোদন দেওয়া হবে।\n\n"
+        f"আপনার অ্যাকাউন্ট verified হলে {SCRIPT_PRICE} টাকা যোগ হবে।",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
     return ConversationHandler.END
 
 
@@ -600,6 +668,8 @@ async def admin_message_user_message(update: Update, context: ContextTypes.DEFAU
             return States.ADMIN_MESSAGE_USER_ID
         
         context.user_data["message_user_id"] = user_id
+        app.add_handler(MessageHandler(filters.Regex("^/edituser"), edit_user_balance))
+    app.add_handler(MessageHandler(filters.Regex("^/msg"), send_message_to_user))
         await update.message.reply_text("মেসেজ টাইপ করুন:")
         return States.ADMIN_MESSAGE_TEXT
     except ValueError:
