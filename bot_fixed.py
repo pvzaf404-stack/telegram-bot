@@ -43,8 +43,13 @@ ADMIN_ID = 8669242020
 SCRIPT_PRICE = 15
 MIN_WITHDRAWAL = 100
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "scripts.db")
-BOT_STATUS_DB = os.path.join(os.path.dirname(__file__), "bot_status.db")
+# DB_DIR: Render-এ Persistent Disk অ্যাড করে তার mount path এখানে
+# Environment Variable হিসেবে সেট করুন (উদাহরণ: DB_DIR=/var/data)
+# না দিলে আগের মতো bot ফাইলের পাশেই থাকবে (Render free/no-disk হলে প্রতি deploy-এ ডেটা মুছে যাবে)
+DB_DIR = os.getenv("DB_DIR", os.path.dirname(__file__))
+os.makedirs(DB_DIR, exist_ok=True)
+DB_PATH = os.path.join(DB_DIR, "scripts.db")
+BOT_STATUS_DB = os.path.join(DB_DIR, "bot_status.db")
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,6 +63,8 @@ class States(Enum):
     ADMIN_EDIT_BALANCE = 6
     ADMIN_MESSAGE_USER_ID = 7
     ADMIN_MESSAGE_TEXT = 8
+    ADMIN_BROADCAST_TEXT = 9
+    ADMIN_REJECT_REASON = 10
 
 SELL_BTN = "📝 Sell Gmail"
 BALANCE_BTN = "💰 Balance"
@@ -529,6 +536,9 @@ async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📝 পেন্ডিং GMAIL", callback_data="admin_scripts")],
         [InlineKeyboardButton("💳 উত্তোলন", callback_data="admin_withdrawals")],
         [InlineKeyboardButton("👥 ইউজার ম্যানেজ", callback_data="admin_users")],
+        [InlineKeyboardButton("💰 ব্যালেন্স এডিট", callback_data="admin_edit_balance_start")],
+        [InlineKeyboardButton("✉️ নির্দিষ্ট ইউজারকে মেসেজ", callback_data="admin_msg_user_start")],
+        [InlineKeyboardButton("📢 সবাইকে মেসেজ (Broadcast)", callback_data="admin_broadcast_start")],
         [InlineKeyboardButton("🔴 বট বন্ধ", callback_data="bot_stop")],
         [InlineKeyboardButton("🟢 বট চালু", callback_data="bot_start")],
     ]
@@ -592,6 +602,217 @@ async def show_admin_users(query, context):
     
     keyboard = [[InlineKeyboardButton("← ফিরে যান", callback_data="admin_back")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+# ---------- Admin: Edit Balance (button flow) ----------
+
+async def admin_edit_balance_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    await query.edit_message_text("👤 যে ইউজারের ব্যালেন্স পরিবর্তন করবেন তার User ID পাঠান:\n\n(বাতিল করতে /start লিখুন)")
+    return States.ADMIN_EDIT_USER_ID
+
+
+async def admin_edit_balance_get_userid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user_id = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("❌ সঠিক সংখ্যার User ID পাঠান।")
+        return States.ADMIN_EDIT_USER_ID
+
+    user_info = get_user_info(user_id)
+    if not user_info:
+        await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি। আবার সঠিক ID পাঠান।")
+        return States.ADMIN_EDIT_USER_ID
+
+    context.user_data["edit_target_user"] = user_id
+    current_balance = user_info[2]
+    await update.message.reply_text(
+        f"👤 User ID: {user_id}\nবর্তমান ব্যালেন্স: {current_balance} টাকা\n\n➡️ নতুন ব্যালেন্স লিখুন (শুধু সংখ্যা):"
+    )
+    return States.ADMIN_EDIT_BALANCE
+
+
+async def admin_edit_balance_apply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        new_balance = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("❌ সংখ্যা লিখুন।")
+        return States.ADMIN_EDIT_BALANCE
+
+    user_id = context.user_data.get("edit_target_user")
+    user_info = get_user_info(user_id)
+    old_balance = user_info[2] if user_info else 0
+
+    update_user_balance(user_id, new_balance)
+
+    await update.message.reply_text(
+        f"✅ সম্পন্ন!\n\n👤 User ID: {user_id}\n📊 আগে: {old_balance} টাকা\n📊 এখন: {new_balance} টাকা"
+    )
+
+    try:
+        await context.bot.send_message(
+            user_id, f"⚠️ আপনার ব্যালেন্স অ্যাডমিন কর্তৃক আপডেট করা হয়েছে।\nনতুন ব্যালেন্স: {new_balance} টাকা"
+        )
+    except Exception as e:
+        logger.error(f"User notify error: {e}")
+
+    context.user_data.pop("edit_target_user", None)
+    return ConversationHandler.END
+
+
+# ---------- Admin: Message a specific user (button flow) ----------
+
+async def admin_msg_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    await query.edit_message_text("👤 যাকে মেসেজ পাঠাবেন তার User ID পাঠান:\n\n(বাতিল করতে /start লিখুন)")
+    return States.ADMIN_MESSAGE_USER_ID
+
+
+async def admin_msg_get_userid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user_id = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("❌ সঠিক সংখ্যার User ID পাঠান।")
+        return States.ADMIN_MESSAGE_USER_ID
+
+    user_info = get_user_info(user_id)
+    if not user_info:
+        await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি। আবার সঠিক ID পাঠান।")
+        return States.ADMIN_MESSAGE_USER_ID
+
+    context.user_data["msg_target_user"] = user_id
+    await update.message.reply_text(f"✅ User ID: {user_id}\n\n✏️ এখন মেসেজ লিখুন:")
+    return States.ADMIN_MESSAGE_TEXT
+
+
+async def admin_msg_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = context.user_data.get("msg_target_user")
+    message_text = update.message.text
+
+    try:
+        await context.bot.send_message(user_id, f"📬 Admin Message:\n\n{message_text}")
+        await update.message.reply_text(f"✅ মেসেজ পাঠানো হয়েছে ইউজার {user_id} কে।")
+    except Exception as e:
+        await update.message.reply_text(f"❌ পাঠানো যায়নি: {e}")
+
+    context.user_data.pop("msg_target_user", None)
+    return ConversationHandler.END
+
+
+# ---------- Admin: Broadcast to all users (button flow) ----------
+
+async def admin_broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    await query.edit_message_text("📢 সকল ইউজারকে যে মেসেজ পাঠাবেন তা লিখুন:\n\n(বাতিল করতে /start লিখুন)")
+    return States.ADMIN_BROADCAST_TEXT
+
+
+async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_text = update.message.text
+    users = get_all_users()
+    sent, failed = 0, 0
+
+    for user_id, username, balance, total_sold in users:
+        try:
+            await context.bot.send_message(user_id, f"📢 ঘোষণা:\n\n{message_text}")
+            sent += 1
+        except Exception:
+            failed += 1
+
+    await update.message.reply_text(
+        f"✅ Broadcast সম্পন্ন!\n\n📨 পাঠানো হয়েছে: {sent} জন\n❌ ব্যর্থ (বট ব্লক করেছে): {failed} জন"
+    )
+    return ConversationHandler.END
+
+
+# ---------- Admin: Reject with reason (button flow) ----------
+
+REJECT_REASONS = {
+    "reason_invalid": "আপনার ইমেইলটি সঠিক নয়।",
+    "reason_notworking": "আপনার ইমেইলটি কাজ করছে না।",
+    "reason_issue": "আপনার ইমেইলে কারিগরি সমস্যা রয়েছে।",
+}
+
+
+async def reject_script_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return ConversationHandler.END
+
+    script_id = int(query.data.split("_")[1])
+    row = get_script(script_id)
+    if not row or row[4] != "pending":
+        await query.answer("ইতিমধ্যে প্রসেস।", show_alert=True)
+        return ConversationHandler.END
+
+    context.user_data["reject_script_id"] = script_id
+    context.user_data["reject_user_id"] = row[1]
+
+    keyboard = [
+        [InlineKeyboardButton("❌ ইমেইলটি সঠিক নয়", callback_data="reason_invalid")],
+        [InlineKeyboardButton("❌ ইমেইলটি কাজ করছে না", callback_data="reason_notworking")],
+        [InlineKeyboardButton("❌ ইমেইলে সমস্যা আছে", callback_data="reason_issue")],
+        [InlineKeyboardButton("✏️ কাস্টম কারণ লিখুন", callback_data="reason_custom")],
+    ]
+    await query.edit_message_text("প্রত্যাখ্যানের কারণ বেছে নিন:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return States.ADMIN_REJECT_REASON
+
+
+async def reject_script_reason_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    script_id = context.user_data.get("reject_script_id")
+    user_id = context.user_data.get("reject_user_id")
+
+    if query.data == "reason_custom":
+        await query.edit_message_text("✏️ প্রত্যাখ্যানের কারণ লিখে পাঠান:")
+        return States.ADMIN_REJECT_REASON
+
+    reason = REJECT_REASONS.get(query.data, "আপনার Gmail টি অনুমোদিত হয়নি।")
+    reject_script(script_id)
+
+    try:
+        await context.bot.send_message(
+            user_id, f"❌ আপনার Gmail (ID: {script_id}) প্রত্যাখ্যান করা হয়েছে।\n\nকারণ: {reason}"
+        )
+    except Exception:
+        pass
+
+    await query.edit_message_text(f"✅ প্রত্যাখ্যান সম্পন্ন। (ID: {script_id})")
+    context.user_data.pop("reject_script_id", None)
+    context.user_data.pop("reject_user_id", None)
+    return ConversationHandler.END
+
+
+async def reject_script_custom_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    script_id = context.user_data.get("reject_script_id")
+    user_id = context.user_data.get("reject_user_id")
+    reason = update.message.text.strip()
+
+    reject_script(script_id)
+
+    try:
+        await context.bot.send_message(
+            user_id, f"❌ আপনার Gmail (ID: {script_id}) প্রত্যাখ্যান করা হয়েছে।\n\nকারণ: {reason}"
+        )
+    except Exception:
+        pass
+
+    await update.message.reply_text(f"✅ প্রত্যাখ্যান সম্পন্ন। (ID: {script_id})")
+    context.user_data.pop("reject_script_id", None)
+    context.user_data.pop("reject_user_id", None)
+    return ConversationHandler.END
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -658,16 +879,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.answer("✅ Done", show_alert=True)
         await show_admin_scripts(query, context)
-    elif query.data.startswith("reject_"):
-        script_id = int(query.data.split("_")[1])
-        row = get_script(script_id)
-        if not row or row[4] != "pending":
-            await query.answer("ইতিমধ্যে প্রসেস।", show_alert=True)
-            return
-        
-        reject_script(script_id)
-        await query.answer("❌ Done", show_alert=True)
-        await show_admin_scripts(query, context)
+    # নোট: "reject_" callback এখন admin_reject_conv (ConversationHandler) হ্যান্ডেল করে,
+    # যেটা কারণ জিজ্ঞেস করে তারপর ইউজারকে জানায় — তাই এখান থেকে সরানো হয়েছে।
 
 
 def main():
@@ -700,10 +913,61 @@ def main():
         per_user=True,
         per_chat=True,
     )
-    
+
+    admin_balance_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_edit_balance_start, pattern="^admin_edit_balance_start$")],
+        states={
+            States.ADMIN_EDIT_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_balance_get_userid)],
+            States.ADMIN_EDIT_BALANCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_balance_apply)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_user=True,
+        per_chat=True,
+    )
+
+    admin_msg_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_msg_user_start, pattern="^admin_msg_user_start$")],
+        states={
+            States.ADMIN_MESSAGE_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_msg_get_userid)],
+            States.ADMIN_MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_msg_send)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_user=True,
+        per_chat=True,
+    )
+
+    admin_broadcast_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_broadcast_start, pattern="^admin_broadcast_start$")],
+        states={
+            States.ADMIN_BROADCAST_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_broadcast_send)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_user=True,
+        per_chat=True,
+    )
+
+    admin_reject_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(reject_script_start, pattern="^reject_")],
+        states={
+            States.ADMIN_REJECT_REASON: [
+                CallbackQueryHandler(reject_script_reason_callback, pattern="^reason_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reject_script_custom_reason),
+            ],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_user=True,
+        per_chat=True,
+    )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(script_conv)
     app.add_handler(bkash_conv)
+    # গুরুত্বপূর্ণ: নিচের ৪টা admin conversation handler অবশ্যই button_callback-এর আগে থাকতে হবে,
+    # নাহলে button_callback আগে callback_data ধরে ফেলবে আর conversation state শুরুই হবে না।
+    app.add_handler(admin_balance_conv)
+    app.add_handler(admin_msg_conv)
+    app.add_handler(admin_broadcast_conv)
+    app.add_handler(admin_reject_conv)
     app.add_handler(MessageHandler(filters.Regex("^/edituser"), edit_user_balance))
     app.add_handler(MessageHandler(filters.Regex("^/msg"), send_message_to_user))
     app.add_handler(MessageHandler(filters.Text([BALANCE_BTN]), balance_handler))
