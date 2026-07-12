@@ -895,9 +895,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
            (user_id, None, datetime.now().isoformat()))
 
         try:
-            await context.bot.send_message(user_id, f"✅ অনুমোদিত! {SCRIPT_PRICE} টাকা যুক্ত।")
-        except Exception as e:
-            logger.error(f"Notify user error: {e}")
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=(
+            "🎉 অভিনন্দন!\n\n"
+            "✅ আপনার Gmail অনুমোদিত হয়েছে।\n"
+            f"💰 আপনার অ্যাকাউন্টে {SCRIPT_PRICE} টাকা যোগ করা হয়েছে।\n\n"
+            "ধন্যবাদ।"
+        )
+    )
+    logger.info(f"Message sent to {user_id}")
+
+except Exception as e:
+    logger.error(f"Message failed for {user_id}: {e}")
             try:
                 await context.bot.send_message(
                     ADMIN_ID,
