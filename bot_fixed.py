@@ -711,7 +711,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback))
     
     logger.info("✅ Bot started successfully!")
-    asyncio.run(app.run_polling())
+    app.run_polling()
 
 
 if __name__ == "__main__":
