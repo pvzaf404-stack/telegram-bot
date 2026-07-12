@@ -1,6 +1,9 @@
 """
-Complete Gmail Selling Bot - NO .env needed
-Get token from environment variable or direct input
+Complete Gmail Selling Bot - All Features Included
+- User balance management
+- Direct messaging
+- 30 min wait message
+- No .env needed
 """
 
 import os
@@ -28,7 +31,7 @@ try:
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-# Get token from environment variable (Blender/Replit/Heroku এ set করবা)
+# Get token
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 if not TELEGRAM_BOT_TOKEN:
@@ -211,68 +214,6 @@ def reject_script(script_id):
     cur.execute("UPDATE scripts SET status = 'rejected' WHERE script_id = ?", (script_id,))
     conn.commit()
     conn.close()
-    conn.close()
-
-
-def get_user_info(user_id):
-    async def edit_user_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin edit user balance"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-    
-    try:
-        args = update.message.text.split()
-        if len(args) < 3:
-            await update.message.reply_text("❌ ফর্ম্যাট: /edituser userid newbalance\nউদাহরণ: /edituser 12345 500")
-            return
-        
-        user_id = int(args[1])
-        new_balance = int(args[2])
-        
-        user_info = get_user_info(user_id)
-        if not user_info:
-            await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি।")
-            return
-        
-        old_balance = user_info[2]
-        update_user_balance(user_id, new_balance)
-        
-        await update.message.reply_text(f"✅ ইউজার {user_id} এর ব্যালেন্স আপডেট হয়েছে:\n\n📊 আগে: {old_balance} টাকা\n📊 এখন: {new_balance} টাকা")
-        
-        try:
-            await context.bot.send_message(user_id, f"⚠️ আপনার ব্যালেন্স অ্যাডমিন দ্বারা আপডেট করা হয়েছে: {new_balance} টাকা")
-        except:
-            pass
-    except ValueError:
-        await update.message.reply_text("❌ সংখ্যা সঠিক নয়।")
-
-
-async def send_message_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin send message to user"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-    
-    try:
-        parts = update.message.text.split(None, 2)
-        if len(parts) < 3:
-            await update.message.reply_text("❌ ফর্ম্যাট: /msg userid message\nউদাহরণ: /msg 12345 আপনার অ্যাকাউন্ট সাসপেন্ড করা হয়েছে")
-            return
-        
-        user_id = int(parts[1])
-        message_text = parts[2]
-        
-        user_info = get_user_info(user_id)
-        if not user_info:
-            await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি।")
-            return
-        
-        try:
-            await context.bot.send_message(user_id, f"📬 Admin Message:\n\n{message_text}")
-            await update.message.reply_text(f"✅ মেসেজ পাঠানো হয়েছে ইউজার {user_id} কে।")
-        except Exception as e:
-            await update.message.reply_text(f"❌ ইউজারকে পাঠানো যায়নি: {e}")
-    except ValueError:
-        await update.message.reply_text("❌ ইউজার ID ভুল।") 
 
 
 def get_user_info(user_id):
@@ -429,9 +370,69 @@ async def handle_script(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+async def edit_user_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin edit user balance"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    
+    try:
+        args = update.message.text.split()
+        if len(args) < 3:
+            await update.message.reply_text("❌ ফর্ম্যাট: /edituser userid newbalance\nউদাহরণ: /edituser 12345 500")
+            return
+        
+        user_id = int(args[1])
+        new_balance = int(args[2])
+        
+        user_info = get_user_info(user_id)
+        if not user_info:
+            await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি।")
+            return
+        
+        old_balance = user_info[2]
+        update_user_balance(user_id, new_balance)
+        
+        await update.message.reply_text(f"✅ ইউজার {user_id} এর ব্যালেন্স আপডেট হয়েছে:\n\n📊 আগে: {old_balance} টাকা\n📊 এখন: {new_balance} টাকা")
+        
+        try:
+            await context.bot.send_message(user_id, f"⚠️ আপনার ব্যালেন্স অ্যাডমিন দ্বারা আপডেট করা হয়েছে: {new_balance} টাকা")
+        except:
+            pass
+    except ValueError:
+        await update.message.reply_text("❌ সংখ্যা সঠিক নয়।")
+
+
+async def send_message_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin send message to user"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    
+    try:
+        parts = update.message.text.split(None, 2)
+        if len(parts) < 3:
+            await update.message.reply_text("❌ ফর্ম্যাট: /msg userid message\nউদাহরণ: /msg 12345 আপনার অ্যাকাউন্ট সাসপেন্ড করা হয়েছে")
+            return
+        
+        user_id = int(parts[1])
+        message_text = parts[2]
+        
+        user_info = get_user_info(user_id)
+        if not user_info:
+            await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি।")
+            return
+        
+        try:
+            await context.bot.send_message(user_id, f"📬 Admin Message:\n\n{message_text}")
+            await update.message.reply_text(f"✅ মেসেজ পাঠানো হয়েছে ইউজার {user_id} কে।")
+        except Exception as e:
+            await update.message.reply_text(f"❌ ইউজারকে পাঠানো যায়নি: {e}")
+    except ValueError:
+        await update.message.reply_text("❌ ইউজার ID ভুল।")
+
+
 async def start_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_bot_active():
-        await update.message.reply_text("🔴 বট বর্তমানে বন্ধ আছে।")
+        await update.message.reply_text("🔴 বট বন্ধ আছে।")
         return
     
     balance = get_user_balance(update.effective_user.id)
@@ -494,7 +495,7 @@ async def confirm_withdrawal_callback(update: Update, context: ContextTypes.DEFA
 
 async def balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_bot_active():
-        await update.message.reply_text("🔴 বট বন্ধ আছে।")
+        await update.message.reply_text("🔴 বট বন্ধ।")
         return
     
     balance = get_user_balance(update.effective_user.id)
@@ -513,7 +514,6 @@ async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📝 পেন্ডিং GMAIL", callback_data="admin_scripts")],
         [InlineKeyboardButton("💳 উত্তোলন", callback_data="admin_withdrawals")],
         [InlineKeyboardButton("👥 ইউজার ম্যানেজ", callback_data="admin_users")],
-        [InlineKeyboardButton("✉️ মেসেজ পাঠাও", callback_data="admin_message")],
         [InlineKeyboardButton("🔴 বট বন্ধ", callback_data="bot_stop")],
         [InlineKeyboardButton("🟢 বট চালু", callback_data="bot_start")],
     ]
@@ -593,17 +593,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_admin_withdrawals(query, context)
     elif query.data == "admin_users":
         await show_admin_users(query, context)
-    elif query.data == "admin_message":
-        await query.edit_message_text("ইউজারের ID টাইপ করুন:")
-        return States.ADMIN_MESSAGE_USER_ID
     elif query.data == "bot_stop":
         set_bot_status(False)
         await context.bot.send_message(ADMIN_ID, "🔴 বট বন্ধ করা হয়েছে।")
-        await query.answer("বট বন্ধ হয়েছে।", show_alert=True)
+        await query.answer("বট বন্ধ।", show_alert=True)
     elif query.data == "bot_start":
         set_bot_status(True)
         await context.bot.send_message(ADMIN_ID, "🟢 বট চালু করা হয়েছে।")
-        await query.answer("বট চালু হয়েছে।", show_alert=True)
+        await query.answer("বট চালু।", show_alert=True)
     elif query.data.startswith("approve_w_"):
         withdrawal_id = int(query.data.split("_")[2])
         success = approve_withdrawal(withdrawal_id)
@@ -658,38 +655,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_admin_scripts(query, context)
 
 
-async def admin_message_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user_id = int(update.message.text.strip())
-        user_info = get_user_info(user_id)
-        
-        if not user_info:
-            await update.message.reply_text("❌ এই ইউজার নেই।")
-            return States.ADMIN_MESSAGE_USER_ID
-        
-        context.user_data["message_user_id"] = user_id
-        app.add_handler(MessageHandler(filters.Regex("^/edituser"), edit_user_balance))
-    app.add_handler(MessageHandler(filters.Regex("^/msg"), send_message_to_user))
-        await update.message.reply_text("মেসেজ টাইপ করুন:")
-        return States.ADMIN_MESSAGE_TEXT
-    except ValueError:
-        await update.message.reply_text("❌ সংখ্যা দিন।")
-        return States.ADMIN_MESSAGE_USER_ID
-
-
-async def admin_message_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message_text = update.message.text.strip()
-    user_id = context.user_data.get("message_user_id")
-    
-    try:
-        await context.bot.send_message(user_id, f"📬 Admin: {message_text}")
-        await update.message.reply_text(f"✅ পাঠানো হয়েছে।")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
-    
-    return ConversationHandler.END
-
-
 def main():
     if not TELEGRAM_BOT_TOKEN:
         raise SystemExit("❌ Bot token not found!")
@@ -721,21 +686,11 @@ def main():
         per_chat=True,
     )
     
-    admin_message_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(lambda u, c: States.ADMIN_MESSAGE_USER_ID, pattern="^admin_message$")],
-        states={
-            States.ADMIN_MESSAGE_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_message_user_message)],
-            States.ADMIN_MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_message_text_message)],
-        },
-        fallbacks=[CommandHandler("start", start)],
-        per_user=True,
-        per_chat=True,
-    )
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(script_conv)
     app.add_handler(bkash_conv)
-    app.add_handler(admin_message_conv)
+    app.add_handler(MessageHandler(filters.Regex("^/edituser"), edit_user_balance))
+    app.add_handler(MessageHandler(filters.Regex("^/msg"), send_message_to_user))
     app.add_handler(MessageHandler(filters.Text([BALANCE_BTN]), balance_handler))
     app.add_handler(MessageHandler(filters.Text([ADMIN_BTN]), admin_handler))
     app.add_handler(CallbackQueryHandler(button_callback))
