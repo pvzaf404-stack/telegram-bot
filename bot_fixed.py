@@ -321,7 +321,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
      text = (
-         
         "👋 স্বাগতম GMAIL Selling Bot এ!\n\n"
         "আপনার Gmail and Password লিখে জমা দিন এবং প্রতিটি অনুমোদিত "
         f"Gmail {SCRIPT_PRICE} টাকা আয় করুন।\n\n"
