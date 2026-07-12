@@ -13,8 +13,8 @@ import asyncio
 from datetime import datetime
 from enum import Enum
 
-import psycopg2
-from psycopg2 import pool as pg_pool
+import psycopg
+from psycopg_pool import ConnectionPool
 
 from telegram import (
     Update,
@@ -91,10 +91,10 @@ UNBLOCKED_MESSAGE = (
     "ধন্যবাদ।"
 )
 
-# ---------- PostgreSQL Connection Pool ----------
+# ---------- PostgreSQL Connection Pool (psycopg3) ----------
 # একটা connection pool ব্যবহার করা হচ্ছে যাতে Supabase-এর কানেকশন লিমিট শেষ না হয়ে যায়
 
-_db_pool = pg_pool.SimpleConnectionPool(1, 10, dsn=DATABASE_URL)
+_db_pool = ConnectionPool(conninfo=DATABASE_URL, min_size=1, max_size=10, open=True)
 
 
 def get_conn():
