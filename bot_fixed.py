@@ -320,7 +320,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    text = f"👋 স্বাগতম GMAIL Selling Bot এ!\n\nপ্রতিটি অনুমোদিত GMAIL: {SCRIPT_PRICE} টাকা"
+     text = (
+        "👋 স্বাগতম GMAIL Selling Bot এ!\n\n"
+        "আপনার Gmail and Password লিখে জমা দিন এবং প্রতিটি অনুমোদিত "
+        f"Gmail {SCRIPT_PRICE} টাকা আয় করুন।\n\n"
+        "📌 কীভাবে কাজ করবেন:\n"
+        f"1️⃣ নিচের \"{SELL_BTN}\" বাটনে ক্লিক করুন\n"
+        "2️⃣ GMAIL লিখে পাঠান\n"
+        "3️⃣ PASSWORD লিখে পাঠান\n"
+        "4️⃣ Admin পর্যালোচনা করবেন (সাধারণত ৩০ মিনিটের মধ্যে)\n"
+        f"5️⃣ অনুমোদিত হলে আপনার ব্যালেন্সে {SCRIPT_PRICE} টাকা যোগ হবে, "
+        "প্রত্যাখ্যাত হলে কোনো টাকা যোগ হবে না\n\n"
+        f"💸 উত্তোলন (Withdrawal): সর্বনিম্ন {MIN_WITHDRAWAL} টাকা ব্যালেন্স থাকলে "
+        "তবেই উত্তোলনের অনুরোধ করা যাবে।\n\n"
+        "নিচের মেনু থেকে অপশন বেছে নিন 👇"
+    )
+
     
     if query:
         await query.answer()
