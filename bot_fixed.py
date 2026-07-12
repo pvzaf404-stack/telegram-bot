@@ -207,12 +207,22 @@ def get_script(script_id):
 def approve_script(script_id, user_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
     cur.execute("UPDATE scripts SET status = 'approved', approved_at = ? WHERE script_id = ?",
                (datetime.now().isoformat(), script_id))
+
+    # যদি ইউজার ডাটাবেজে না থাকে (যেমন Render redeploy-তে DB রিসেট হয়ে থাকলে),
+    # তাকে নতুন করে (balance=0 দিয়ে) তৈরি করি — যাতে টাকা নীরবে হারিয়ে না যায়
+    cur.execute("INSERT OR IGNORE INTO users (user_id, username, created_at) VALUES (?, ?, ?)",
+               (user_id, None, datetime.now().isoformat()))
+
     cur.execute("UPDATE users SET balance = balance + ?, total_sold = total_sold + 1 WHERE user_id = ?",
                (SCRIPT_PRICE, user_id))
+    balance_updated = cur.rowcount > 0
+
     conn.commit()
     conn.close()
+    return balance_updated
 
 
 def reject_script(script_id):
@@ -408,10 +418,11 @@ async def edit_user_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         user_info = get_user_info(user_id)
         if not user_info:
-            await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি।")
-            return
-        
-        old_balance = user_info[2]
+            get_or_create_user(user_id, None)
+            old_balance = 0
+        else:
+            old_balance = user_info[2]
+
         update_user_balance(user_id, new_balance)
         
         await update.message.reply_text(f"✅ ইউজার {user_id} এর ব্যালেন্স আপডেট হয়েছে:\n\n📊 আগে: {old_balance} টাকা\n📊 এখন: {new_balance} টাকা")
@@ -437,11 +448,6 @@ async def send_message_to_user(update: Update, context: ContextTypes.DEFAULT_TYP
         
         user_id = int(parts[1])
         message_text = parts[2]
-        
-        user_info = get_user_info(user_id)
-        if not user_info:
-            await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি।")
-            return
         
         try:
             await context.bot.send_message(user_id, f"📬 Admin Message:\n\n{message_text}")
@@ -624,11 +630,17 @@ async def admin_edit_balance_get_userid(update: Update, context: ContextTypes.DE
 
     user_info = get_user_info(user_id)
     if not user_info:
-        await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি। আবার সঠিক ID পাঠান।")
-        return States.ADMIN_EDIT_USER_ID
+        # ডাটাবেজে ইউজার নেই (হয়তো DB রিসেট হয়েছে) — ব্লক না করে balance=0 দিয়ে তৈরি করে এগিয়ে যাই
+        get_or_create_user(user_id, None)
+        await update.message.reply_text(
+            f"⚠️ ইউজার {user_id} লোকাল ডাটাবেজে ছিল না, নতুন করে তৈরি করা হলো (ব্যালেন্স ০)।\n"
+            f"এটা দেখলে ধরে নিন Render redeploy-তে ডাটাবেজ রিসেট হয়েছে।"
+        )
+        current_balance = 0
+    else:
+        current_balance = user_info[2]
 
     context.user_data["edit_target_user"] = user_id
-    current_balance = user_info[2]
     await update.message.reply_text(
         f"👤 User ID: {user_id}\nবর্তমান ব্যালেন্স: {current_balance} টাকা\n\n➡️ নতুন ব্যালেন্স লিখুন (শুধু সংখ্যা):"
     )
@@ -683,8 +695,10 @@ async def admin_msg_get_userid(update: Update, context: ContextTypes.DEFAULT_TYP
 
     user_info = get_user_info(user_id)
     if not user_info:
-        await update.message.reply_text(f"❌ ইউজার {user_id} খুঁজে পাওয়া যায়নি। আবার সঠিক ID পাঠান।")
-        return States.ADMIN_MESSAGE_USER_ID
+        # DB-তে না থাকলেও ব্লক করছি না — Telegram user_id সঠিক হলে মেসেজ ঠিকই যাবে
+        await update.message.reply_text(
+            f"⚠️ ইউজার {user_id} লোকাল ডাটাবেজে পাওয়া যায়নি, তবু মেসেজ পাঠানোর চেষ্টা করা হবে।"
+        )
 
     context.user_data["msg_target_user"] = user_id
     await update.message.reply_text(f"✅ User ID: {user_id}\n\n✏️ এখন মেসেজ লিখুন:")
@@ -731,6 +745,11 @@ async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(
         f"✅ Broadcast সম্পন্ন!\n\n📨 পাঠানো হয়েছে: {sent} জন\n❌ ব্যর্থ (বট ব্লক করেছে): {failed} জন"
     )
+    if sent == 0 and failed == 0:
+        await update.message.reply_text(
+            "⚠️ ডাটাবেজে কোনো ইউজার পাওয়া যায়নি — সম্ভবত সাম্প্রতিক deploy/restart-এ ডাটাবেজ রিসেট হয়েছে "
+            "(persistent disk বা external database না থাকলে এটা ঘটবে)।"
+        )
     return ConversationHandler.END
 
 
@@ -871,12 +890,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         approve_script(script_id, user_id)
-        
+
         try:
             await context.bot.send_message(user_id, f"✅ অনুমোদিত! {SCRIPT_PRICE} টাকা যুক্ত।")
-        except:
-            pass
-        
+        except Exception as e:
+            logger.error(f"Notify user error: {e}")
+            try:
+                await context.bot.send_message(
+                    ADMIN_ID,
+                    f"⚠️ script {script_id} অনুমোদিত হয়েছে ও ব্যালেন্স যোগ হয়েছে, কিন্তু ইউজার {user_id}-কে "
+                    f"নোটিফাই করা যায়নি (হয়তো বট ব্লক করা): {e}"
+                )
+            except Exception:
+                pass
+
         await query.answer("✅ Done", show_alert=True)
         await show_admin_scripts(query, context)
     # নোট: "reject_" callback এখন admin_reject_conv (ConversationHandler) হ্যান্ডেল করে,
