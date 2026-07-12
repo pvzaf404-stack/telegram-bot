@@ -890,6 +890,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         approve_script(script_id, user_id)
+        
+        cur.execute("INSERT OR IGNORE INTO users (user_id, username, created_at) VALUES (?, ?, ?)",
+           (user_id, None, datetime.now().isoformat()))
 
         try:
             await context.bot.send_message(user_id, f"✅ অনুমোদিত! {SCRIPT_PRICE} টাকা যুক্ত।")
