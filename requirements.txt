@@ -4,3 +4,5 @@ google-auth-oauthlib==1.2.0
 google-auth-httplib2==0.2.0
 google-api-python-client==2.108.0
 psycopg[binary]
+python-telegram-bot==20.3
+psycopg2-binary==2.9.9
