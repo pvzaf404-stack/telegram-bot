@@ -52,7 +52,7 @@ if not DATABASE_URL:
 
 ADMIN_ID = 8669242020
 SCRIPT_PRICE = 15
-MIN_WITHDRAWAL = 30
+MIN_WITHDRAWAL = 45
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
